@@ -1,30 +1,78 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState } from "react";
 import StarRating from "./StarRating";
-import { useMovies, KEY } from "./hooks/useMovies";
-import { useLocalStorage } from "./hooks/useLocalStorage";
-import { useKeyPress } from "./hooks/useKeyPress";
+
+const tempWatchedData = [
+  {
+    imdbID: "tt1375666",
+    title: "Inception",
+    year: "2010",
+    poster:
+      "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
+    runtime: 148,
+    imdbRating: 8.8,
+    userRating: 10,
+  },
+  {
+    imdbID: "tt0088763",
+    title: "Back to the Future",
+    year: "1985",
+    poster:
+      "https://m.media-amazon.com/images/M/MV5BZmU0M2Y1OGUtZjIxNi00ZjBkLTg1MjgtOWIyNThiZWIwYjRiXkEyXkFqcGdeQXVyMTQxNzMzNDI@._V1_SX300.jpg",
+    runtime: 116,
+    imdbRating: 8.5,
+    userRating: 9,
+  },
+];
 
 const average = (arr) =>
   arr.reduce((acc, cur, i, arr) => acc + cur / arr.length, 0);
 
-// const initialWatched = JSON.parse(localStorage.getItem("watched")) || [];
+const KEY = "1798675f";
 
 export default function App() {
-  // const [watched, setWatched] = useState(initialWatched);
-
-  const [selectedId, setSelectedId] = useState(null);
+  const [movies, setMovies] = useState([]);
+  const [watched, setWatched] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  // const [result, setResult] = useState("Harry Potter");
   const [result, setResult] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
 
-  const { movies, isLoading, errorMsg } = useMovies(
-    result,
-    useCallback(movieDetailCloseHandler, [])
-  );
-  const [watched, setWatched] = useLocalStorage([], "watched");
+  useEffect(() => {
+    // 1.create a instance
+    const controller = new AbortController();
+    async function movieFetch() {
+      if (result !== "") {
+        try {
+          setIsLoading(true);
+          // 2.connect signal to fetch
+          const res = await fetch(
+            `http://www.omdbapi.com/?apikey=${KEY}&s=${result}`,
+            { signal: controller.signal }
+          );
+          if (!res.ok) throw new Error("Something went wrong");
+          const data = await res.json();
+          if (data.Response === "False") throw new Error("Movie not found");
+          setErrorMsg("");
 
-  useKeyPress(
-    "Escape",
-    useCallback(() => setResult(""), [setResult])
-  );
+          setMovies(data.Search);
+        } catch (e) {
+          setMovies([]);
+          if (e.name !== "AbortError") setErrorMsg(e.message);
+        } finally {
+          //try 和 catch 最终都会执行的逻辑
+          movies.length > 0 && setErrorMsg("");
+          setIsLoading(false);
+        }
+      }
+    }
+    movieFetch();
+    movieDetailCloseHandler();
+    return function () {
+      // 3.clean up
+      controller.abort();
+    };
+  }, [result]);
 
   function movieDetailHandler(id) {
     setSelectedId((oldId) => (oldId === id ? null : id));
@@ -99,14 +147,12 @@ function Logo() {
 }
 
 function Search({ query, setResult }) {
-  const searchRef = useRef(null);
-  useKeyPress(
-    "Enter",
-    useCallback(() => {
-      if (document.activeElement === searchRef.current) return;
-      searchRef.current.focus();
-    }, [searchRef])
-  );
+  // const [query, setQuery] = useState("");
+
+  const searchHandler = () => {
+    setResult(query);
+    // setQuery((query) => (query = ""));
+  };
 
   return (
     <input
@@ -115,7 +161,8 @@ function Search({ query, setResult }) {
       placeholder="Search movies..."
       value={query}
       onChange={(e) => setResult(e.target.value)}
-      ref={searchRef}
+      // onChange={(e) => setQuery(e.target.value)}
+      // onMouseLeave={searchHandler}
     />
   );
 }
@@ -238,6 +285,7 @@ function MovieDetails({ watched, selectedId, onMovieClick, onMovieWatched }) {
     Genre: genre,
     imdbRating,
   } = movie;
+
   useEffect(() => {
     const keyUpHandler = () => {
       onMovieClick();
